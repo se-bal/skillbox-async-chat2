@@ -4,3 +4,7 @@
 Сделать
 - функцию hello, которая выводит текст приветствия клиенту
 """
+import asyncio
+
+class Pypyrka(asyncio.Protocol):
+
