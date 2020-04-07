@@ -16,16 +16,23 @@ class ServerProtocol(asyncio.Protocol):
     def data_received(self, data: bytes):
         print(data)
 
-        decoded = data.decode()
+        decoded = data.decode().replace("\r\n", "")
 
         if self.login is not None:
             self.send_message(decoded)
         else:
             if decoded.startswith("login:"):
-                self.login = decoded.replace("login:", "").replace("\r\n", "")
-                self.transport.write(
-                    f"Привет, {self.login}!\n".encode()
-                )
+                login = decoded.replace("login:", "")
+                if self.login_used(login):
+                    self.transport.write(f"Логин {login} занят, попробуйте другой\n".encode())
+                    print(f"Сессия клиента завершена при попытке установить логин {login}")
+                    self.transport.close()
+                else:
+                    self.login = login
+                    self.transport.write(
+                        f"Привет, {self.login}!\n".encode()
+                    )
+                    self.send_history()
             else:
                 self.transport.write("Неправильный логин\n".encode())
 
@@ -42,14 +49,33 @@ class ServerProtocol(asyncio.Protocol):
         message = f"{self.login}: {content}\n"
 
         for user in self.server.clients:
+            if user is self:
+                continue
             user.transport.write(message.encode())
+
+        self.server.message_history.append(message)
+        while len(self.server.message_history) > 10:
+            del self.server.message_history[0]
+
+    def login_used(self, login: str):
+        for user in self.server.clients:
+            if user.login == login:
+                return True
+        return False
+
+    def send_history(self):
+        self.transport.write("Сейчас обсуждают:\n".encode())
+        for message in self.server.message_history:
+            self.transport.write(f"{message}".encode())
 
 
 class Server:
     clients: list
+    message_history: list
 
     def __init__(self):
         self.clients = []
+        self.message_history = []
 
     def build_protocol(self):
         return ServerProtocol(self)
